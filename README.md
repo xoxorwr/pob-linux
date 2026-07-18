@@ -12,6 +12,6 @@ git clone https://github.com/PathOfBuildingCommunity/PathOfBuilding.git
 cd PathOfBuilding
 git clone https://github.com/xoxorwr/pob-linux.git runtime-linux
 make -C runtime-linux/
-./pob
+./runtime-linux/pob
 ```
 
