@@ -653,7 +653,7 @@ r_shaderHnd_t *rRegisterShader(r_renderer_t *ren, const char *name, int flags)
 	sh->nameHash = nameHash;
 	sh->refCount = 1;
 	sh->tex = r_texCreate(ren, name, flags);
-	if (sh->tex->error) {
+	if (sh->tex && sh->tex->error) {
 		conWarning("couldn't load texture '%s'", name);
 	}
 	ren->shaderList[slot] = sh;
@@ -665,6 +665,17 @@ r_shaderHnd_t *rRegisterShader(r_renderer_t *ren, const char *name, int flags)
 
 r_shaderHnd_t *rRegisterShaderFromImage(r_renderer_t *ren, GLuint texId, int width, int height, int flags)
 {
+	/* Check if this texId is already registered */
+	for (int i = 0; i < ren->numShader; i++) {
+		r_shader_t *sh = ren->shaderList[i];
+		if (sh && sh->tex && sh->tex->texId == texId) {
+			r_shaderHnd_t *hnd = (r_shaderHnd_t *)calloc(1, sizeof(r_shaderHnd_t));
+			hnd->sh = sh;
+			sh->refCount++;
+			return hnd;
+		}
+	}
+
 	int slot = -1;
 	for (int i = 0; i < ren->numShader; i++) {
 		if (!ren->shaderList[i]) { slot = i; break; }
@@ -772,6 +783,7 @@ void rSetDrawLayer(r_renderer_t *ren, int layer, int subLayer)
 
 void rSetDrawSubLayer(r_renderer_t *ren, int subLayer)
 {
+	if (!ren->curLayer) return;
 	rSetDrawLayer(ren, ren->curLayer->layer, subLayer);
 }
 

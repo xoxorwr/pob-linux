@@ -51,6 +51,7 @@ struct ui_main_s {
 	float lastColor[4];
 	int   cursorX;
 	int   cursorY;
+	int   gcCounter;
 
 	ui_subscript_t *subScripts[UI_MAX_SUBSCRIPTS];
 };

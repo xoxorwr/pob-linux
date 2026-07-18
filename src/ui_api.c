@@ -296,10 +296,16 @@ static int l_NewImageHandle(lua_State *L)
 
 static int l_imgHandleGC(lua_State *L)
 {
-	imgHandle_t *ih = GetImgHandle(L, GetUIPtr(L), "__gc", 0);
+	ui_main_t *ui = GetUIPtr(L);
+	imgHandle_t *ih = GetImgHandle(L, ui, "__gc", 0);
 	if (ih->hnd) {
+		if (ih->hnd->sh) {
+			ih->hnd->sh->refCount--;
+		}
 		free(ih->hnd);
 		ih->hnd = NULL;
+		if (ui->renderer)
+			rPurgeShaders(ui->renderer);
 	}
 	return 0;
 }
@@ -341,8 +347,12 @@ static int l_imgHandleLoad(lua_State *L)
 	}
 
 	if (ih->hnd) {
+		if (ih->hnd->sh) {
+			ih->hnd->sh->refCount--;
+		}
 		free(ih->hnd);
 		ih->hnd = NULL;
+		rPurgeShaders(ui->renderer);
 	}
 	ih->hnd = rRegisterShader(ui->renderer, filePath, flags);
 	return 0;
@@ -353,8 +363,13 @@ static int l_imgHandleUnload(lua_State *L)
 	ui_main_t *ui = GetUIPtr(L);
 	imgHandle_t *ih = GetImgHandle(L, ui, "Unload", 0);
 	if (ih->hnd) {
+		if (ih->hnd->sh) {
+			ih->hnd->sh->refCount--;
+		}
 		free(ih->hnd);
 		ih->hnd = NULL;
+		if (ui->renderer)
+			rPurgeShaders(ui->renderer);
 	}
 	return 0;
 }

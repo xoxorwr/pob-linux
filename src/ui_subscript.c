@@ -78,14 +78,12 @@ int uiSubScriptLaunch(ui_main_t *ui, const char *scriptText, const char *funcLis
 	/* Create the subscript structure */
 	ui_subscript_t *ss = (ui_subscript_t *)calloc(1, sizeof(ui_subscript_t));
 	ss->id = slot;
+	ss->coRef = coRef;
 	ss->co = co;
 	ss->isRunning = 1;
 	ss->ui = ui;
 
 	ui->subScripts[slot] = ss;
-
-	/* Store the ref so we can clean up later */
-	(void)coRef;
 
 	return slot;
 }
@@ -99,6 +97,7 @@ void uiSubScriptAbort(ui_main_t *ui, int slot)
 
 	ss->isRunning = 0;
 	ss->co = NULL;
+	luaL_unref(ui->L, LUA_REGISTRYINDEX, ss->coRef);
 	free(ss);
 	ui->subScripts[slot] = NULL;
 }
@@ -175,6 +174,7 @@ void uiSubScriptFreeAll(ui_main_t *ui)
 			ui_subscript_t *ss = ui->subScripts[i];
 			ss->isRunning = 0;
 			ss->co = NULL;
+			luaL_unref(ui->L, LUA_REGISTRYINDEX, ss->coRef);
 			free(ss);
 			ui->subScripts[i] = NULL;
 		}

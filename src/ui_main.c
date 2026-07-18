@@ -247,6 +247,7 @@ void uiScriptInit(ui_main_t *ui)
 	ui->inLua = 0;
 	ui->hasActiveCoroutine = 0;
 	ui->framesSinceWindowHidden = 0;
+	ui->gcCounter = 0;
 
 	/* Initialise Lua */
 	conPrintf("Initialising Lua...\n");
@@ -376,6 +377,17 @@ void uiFrame(ui_main_t *ui)
 		int extraArgs = uiPushCallback(ui, "OnFrame");
 		if (extraArgs >= 0)
 			uiPCall(ui, extraArgs, 0);
+	}
+
+	/* Force Lua GC stepping to collect orphaned resources (image handles, controls)
+	 * from e.g. build switches. Incremental step every frame, full collection periodically. */
+	if (ui->L) {
+		ui->gcCounter++;
+		lua_gc(ui->L, LUA_GCSTEP, 0);
+		if (ui->gcCounter >= 120) {
+			ui->gcCounter = 0;
+			lua_gc(ui->L, LUA_GCCOLLECT, 0);
+		}
 	}
 
 	ui->renderEnable = 0;

@@ -1,5 +1,6 @@
 #include "sys_video.h"
 #include "sys_main.h"
+#include "core_image.h"
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -259,6 +260,7 @@ int sysVideoApply(sys_video_t *vid, sys_vidSet_s *set)
 			const char *errDesc = "Unknown error";
 			glfwGetError(&errDesc);
 			fprintf(stderr, "Could not create window: %s\n", errDesc);
+			glfwTerminate();
 			return -1;
 		}
 
@@ -281,6 +283,22 @@ int sysVideoApply(sys_video_t *vid, sys_vidSet_s *set)
 		glfwSetWindowSizeLimits((GLFWwindow *)vid->wnd,
 			vid->minSize[0], vid->minSize[1],
 			GLFW_DONT_CARE, GLFW_DONT_CARE);
+
+		/* Set window icon */
+		{
+			char iconPath[1024];
+			snprintf(iconPath, sizeof(iconPath), "%s/icon.png", vid->sys->basePath);
+			coreImage_t img;
+			if (coreImageLoad(&img, iconPath, 4)) {
+				GLFWimage glfwImg;
+				glfwImg.width = img.width;
+				glfwImg.height = img.height;
+				glfwImg.pixels = img.data;
+				glfwSetWindowIcon((GLFWwindow *)vid->wnd, 1, &glfwImg);
+				coreImageFree(&img);
+			}
+		}
+
 		glfwSetWindowPos((GLFWwindow *)vid->wnd, wx, wy);
 		glfwShowWindow((GLFWwindow *)vid->wnd);
 		vid->initialised = 1;
