@@ -221,6 +221,58 @@ static int LayerCompare(const void *a, const void *b)
 
 /* ======== Layer Rendering ======== */
 
+static void FlushBatch(r_renderer_t *ren, GLuint vbo, int *blendMode, r_tex_t **texs, int *texCount, Vertex *verts, int *vertCount)
+{
+	if (*vertCount == 0) return;
+
+	if (*blendMode != -1) {
+		switch (*blendMode) {
+		case RB_ALPHA:
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			break;
+		case RB_PRE_ALPHA:
+			glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+			break;
+		case RB_ADDITIVE:
+			glBlendFunc(GL_ONE, GL_ONE);
+			break;
+		}
+	}
+	for (int i = 0; i < *texCount; i++) {
+		glActiveTexture(GL_TEXTURE0 + i);
+		if (texs[i]) r_texBind(texs[i]);
+		else glBindTexture(GL_TEXTURE_2D, 0);
+	}
+	glActiveTexture(GL_TEXTURE0);
+	int vw = rVirtualScreenWidth(ren);
+	int vh = rVirtualScreenHeight(ren);
+	glViewport(0, 0, vw, vh);
+	float mvp[16];
+	OrthoMatrix(mvp, 0, (float)vw, (float)vh, 0, -9999, 9999);
+	glUniformMatrix4fv(ren->mvpMatrixLoc, 1, GL_FALSE, mvp);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glBufferData(GL_ARRAY_BUFFER, *vertCount * sizeof(Vertex), verts, GL_STREAM_DRAW);
+	glVertexAttribPointer(ren->xyAttr, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, x));
+	glVertexAttribPointer(ren->uvAttr, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, u));
+	glVertexAttribPointer(ren->tintAttr, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, r));
+	glVertexAttribPointer(ren->viewportAttr, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, viewX));
+	glVertexAttribPointer(ren->texIdAttr, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, texId));
+	glEnableVertexAttribArray(ren->xyAttr);
+	glEnableVertexAttribArray(ren->uvAttr);
+	glEnableVertexAttribArray(ren->tintAttr);
+	glEnableVertexAttribArray(ren->viewportAttr);
+	glEnableVertexAttribArray(ren->texIdAttr);
+	glDrawArrays(GL_TRIANGLES, 0, *vertCount);
+	glDisableVertexAttribArray(ren->xyAttr);
+	glDisableVertexAttribArray(ren->uvAttr);
+	glDisableVertexAttribArray(ren->tintAttr);
+	glDisableVertexAttribArray(ren->viewportAttr);
+	glDisableVertexAttribArray(ren->texIdAttr);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	*vertCount = 0;
+	*texCount = 0;
+}
+
 static void RenderLayer(r_renderer_t *ren, r_layer_t *layer)
 {
 	if (layer->numCmd == 0) return;
@@ -235,7 +287,7 @@ static void RenderLayer(r_renderer_t *ren, r_layer_t *layer)
 	r_viewport_s curVP = { 0, 0, 0, 0 };
 	r_tex_t *batchTexs[8] = { NULL };
 	int batchTexCount = 0;
-	Vertex batchVerts[65536];
+	Vertex *batchVerts = (Vertex *)calloc(65536, sizeof(Vertex));
 	int batchVertCount = 0;
 
 	/* VBO */
@@ -282,55 +334,7 @@ static void RenderLayer(r_renderer_t *ren, r_layer_t *layer)
 			}
 			if (texSlot == -1) {
 				if (batchTexCount >= 8) {
-					/* Flush batch */
-					if (batchVertCount > 0) {
-						if (curBlendMode != -1) {
-							switch (curBlendMode) {
-							case RB_ALPHA:
-								glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-								break;
-							case RB_PRE_ALPHA:
-								glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-								break;
-							case RB_ADDITIVE:
-								glBlendFunc(GL_ONE, GL_ONE);
-								break;
-							}
-						}
-						for (int i = 0; i < batchTexCount; i++) {
-							glActiveTexture(GL_TEXTURE0 + i);
-							if (batchTexs[i]) r_texBind(batchTexs[i]);
-							else glBindTexture(GL_TEXTURE_2D, 0);
-						}
-						glActiveTexture(GL_TEXTURE0);
-						int vw = rVirtualScreenWidth(ren);
-						int vh = rVirtualScreenHeight(ren);
-						glViewport(0, 0, vw, vh);
-						float mvp[16];
-						OrthoMatrix(mvp, 0, (float)vw, (float)vh, 0, -9999, 9999);
-						glUniformMatrix4fv(ren->mvpMatrixLoc, 1, GL_FALSE, mvp);
-						glBindBuffer(GL_ARRAY_BUFFER, vbo);
-						glBufferData(GL_ARRAY_BUFFER, batchVertCount * sizeof(Vertex), batchVerts, GL_STREAM_DRAW);
-						glVertexAttribPointer(ren->xyAttr, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, x));
-						glVertexAttribPointer(ren->uvAttr, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, u));
-						glVertexAttribPointer(ren->tintAttr, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, r));
-						glVertexAttribPointer(ren->viewportAttr, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, viewX));
-						glVertexAttribPointer(ren->texIdAttr, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, texId));
-						glEnableVertexAttribArray(ren->xyAttr);
-						glEnableVertexAttribArray(ren->uvAttr);
-						glEnableVertexAttribArray(ren->tintAttr);
-						glEnableVertexAttribArray(ren->viewportAttr);
-						glEnableVertexAttribArray(ren->texIdAttr);
-						glDrawArrays(GL_TRIANGLES, 0, batchVertCount);
-						glDisableVertexAttribArray(ren->xyAttr);
-						glDisableVertexAttribArray(ren->uvAttr);
-						glDisableVertexAttribArray(ren->tintAttr);
-						glDisableVertexAttribArray(ren->viewportAttr);
-						glDisableVertexAttribArray(ren->texIdAttr);
-						glBindBuffer(GL_ARRAY_BUFFER, 0);
-						batchVertCount = 0;
-						batchTexCount = 0;
-					}
+					FlushBatch(ren, vbo, &curBlendMode, batchTexs, &batchTexCount, batchVerts, &batchVertCount);
 					texSlot = 0;
 				} else {
 					texSlot = batchTexCount;
@@ -341,6 +345,10 @@ static void RenderLayer(r_renderer_t *ren, r_layer_t *layer)
 			/* Build 4 corner vertices, then emit 2 triangles (0-1-2, 0-2-3) */
 			{
 				Vertex corners[4];
+				/* Flush if vertex buffer would overflow (65536 / 6 = ~10922 quads max) */
+				if (batchVertCount + 6 > 65536) {
+					FlushBatch(ren, vbo, &curBlendMode, batchTexs, &batchTexCount, batchVerts, &batchVertCount);
+				}
 				for (int v = 0; v < 4; v++) {
 					corners[v].x = cmd->x[v];
 					corners[v].y = cmd->y[v];
@@ -377,60 +385,11 @@ static void RenderLayer(r_renderer_t *ren, r_layer_t *layer)
 	}
 
 	/* Flush remaining batch */
-	if (batchVertCount > 0) {
-		if (curBlendMode != -1) {
-			switch (curBlendMode) {
-			case RB_ALPHA:
-				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-				break;
-			case RB_PRE_ALPHA:
-				glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-				break;
-			case RB_ADDITIVE:
-				glBlendFunc(GL_ONE, GL_ONE);
-				break;
-			}
-		}
-		for (int i = 0; i < batchTexCount; i++) {
-			glActiveTexture(GL_TEXTURE0 + i);
-			if (batchTexs[i]) {
-				r_texBind(batchTexs[i]);
-			} else {
-				glBindTexture(GL_TEXTURE_2D, 0);
-			}
-		}
-		glActiveTexture(GL_TEXTURE0);
-
-		int vw = rVirtualScreenWidth(ren);
-		int vh = rVirtualScreenHeight(ren);
-		glViewport(0, 0, vw, vh);
-		float mvp[16];
-		OrthoMatrix(mvp, 0, (float)vw, (float)vh, 0, -9999, 9999);
-		glUniformMatrix4fv(ren->mvpMatrixLoc, 1, GL_FALSE, mvp);
-
-		glBindBuffer(GL_ARRAY_BUFFER, vbo);
-		glBufferData(GL_ARRAY_BUFFER, batchVertCount * sizeof(Vertex), batchVerts, GL_STREAM_DRAW);
-		glVertexAttribPointer(ren->xyAttr, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, x));
-		glVertexAttribPointer(ren->uvAttr, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, u));
-		glVertexAttribPointer(ren->tintAttr, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, r));
-		glVertexAttribPointer(ren->viewportAttr, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, viewX));
-		glVertexAttribPointer(ren->texIdAttr, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, texId));
-		glEnableVertexAttribArray(ren->xyAttr);
-		glEnableVertexAttribArray(ren->uvAttr);
-		glEnableVertexAttribArray(ren->tintAttr);
-		glEnableVertexAttribArray(ren->viewportAttr);
-		glEnableVertexAttribArray(ren->texIdAttr);
-		glDrawArrays(GL_TRIANGLES, 0, batchVertCount);
-		glDisableVertexAttribArray(ren->xyAttr);
-		glDisableVertexAttribArray(ren->uvAttr);
-		glDisableVertexAttribArray(ren->tintAttr);
-		glDisableVertexAttribArray(ren->viewportAttr);
-		glDisableVertexAttribArray(ren->texIdAttr);
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
-	}
+	FlushBatch(ren, vbo, &curBlendMode, batchTexs, &batchTexCount, batchVerts, &batchVertCount);
 
 	glDeleteBuffers(1, &vbo);
 	glUseProgram(0);
+	free(batchVerts);
 }
 
 /* ======== Renderer Init ======== */
@@ -583,6 +542,7 @@ void rShutdown(r_renderer_t *ren)
 void rBeginFrame(r_renderer_t *ren)
 {
 	r_texManagerProcessUploads();
+	rPurgeShaders(ren);
 
 	/* Ensure default layer exists */
 	if (ren->numLayer == 0) {

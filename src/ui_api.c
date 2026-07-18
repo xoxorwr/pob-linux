@@ -304,8 +304,6 @@ static int l_imgHandleGC(lua_State *L)
 		}
 		free(ih->hnd);
 		ih->hnd = NULL;
-		if (ui->renderer)
-			rPurgeShaders(ui->renderer);
 	}
 	return 0;
 }
@@ -352,7 +350,6 @@ static int l_imgHandleLoad(lua_State *L)
 		}
 		free(ih->hnd);
 		ih->hnd = NULL;
-		rPurgeShaders(ui->renderer);
 	}
 	ih->hnd = rRegisterShader(ui->renderer, filePath, flags);
 	return 0;
@@ -368,8 +365,6 @@ static int l_imgHandleUnload(lua_State *L)
 		}
 		free(ih->hnd);
 		ih->hnd = NULL;
-		if (ui->renderer)
-			rPurgeShaders(ui->renderer);
 	}
 	return 0;
 }
@@ -1646,8 +1641,10 @@ static int l_LoadModule(lua_State *L)
 	char fileName[UI_PATH_MAX];
 	strncpy(fileName, modName, sizeof(fileName) - 1);
 	fileName[sizeof(fileName) - 1] = '\0';
-	if (!strchr(fileName, '.'))
-		strcat(fileName, ".lua");
+	if (!strchr(fileName, '.')) {
+		size_t room = sizeof(fileName) - strlen(fileName) - 1;
+		strncat(fileName, ".lua", room);
+	}
 
 	char fullPath[UI_PATH_MAX];
 	snprintf(fullPath, sizeof(fullPath), "%s/%s", ui->scriptPath, fileName);
@@ -1678,8 +1675,10 @@ static int l_PLoadModule(lua_State *L)
 	char fileName[UI_PATH_MAX];
 	strncpy(fileName, modName, sizeof(fileName) - 1);
 	fileName[sizeof(fileName) - 1] = '\0';
-	if (!strchr(fileName, '.'))
-		strcat(fileName, ".lua");
+	if (!strchr(fileName, '.')) {
+		size_t room = sizeof(fileName) - strlen(fileName) - 1;
+		strncat(fileName, ".lua", room);
+	}
 
 	char fullPath[UI_PATH_MAX];
 	snprintf(fullPath, sizeof(fullPath), "%s/%s", ui->scriptPath, fileName);
