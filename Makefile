@@ -2,8 +2,8 @@ CC ?= gcc
 CFLAGS = -std=c99 -D_GNU_SOURCE -O2 -Wall -Wno-unused-result -Wno-unused-variable -Wno-unused-function \
          -Wno-missing-braces -Wno-unused-but-set-variable \
          -Isrc -Idep -Idep/glad \
-         $(shell pkg-config --cflags glfw3 luajit glesv2 egl zlib libwebp 2>/dev/null)
-LDFLAGS = $(shell pkg-config --libs glfw3 luajit glesv2 egl zlib libwebp 2>/dev/null) \
+         $(shell pkg-config --cflags glfw3 luajit glesv2 egl zlib libwebp libcurl 2>/dev/null)
+LDFLAGS = $(shell pkg-config --libs glfw3 luajit glesv2 egl zlib libwebp libcurl 2>/dev/null) \
           -lm -lpthread -ldl -luuid
 
 SRCS = src/main.c \
@@ -23,7 +23,8 @@ SRCS = src/main.c \
        src/r_font.c \
        src/ui_main.c \
        src/ui_api.c \
-       src/ui_subscript.c
+       src/ui_subscript.c \
+       src/lcurl.c
 
 OBJS = $(SRCS:.c=.o)
 TARGET = pob

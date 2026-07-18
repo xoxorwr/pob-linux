@@ -268,6 +268,16 @@ void uiScriptInit(ui_main_t *ui)
 		sysError("Error initialising Lua environment:\n%s\n", lua_tostring(ui->L, -1));
 	lua_gc(ui->L, LUA_GCRESTART, -1);
 
+	/* Register lcurl.safe via package.preload */
+	{
+		int luaopen_lcurl_safe(lua_State *L);
+		lua_getglobal(ui->L, "package");
+		lua_getfield(ui->L, -1, "preload");
+		lua_pushcfunction(ui->L, luaopen_lcurl_safe);
+		lua_setfield(ui->L, -2, "lcurl.safe");
+		lua_pop(ui->L, 2);
+	}
+
 	/* Init subscript system */
 	for (int i = 0; i < UI_MAX_SUBSCRIPTS; i++)
 		ui->subScripts[i] = NULL;
