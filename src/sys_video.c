@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-static int glfwKeyToSG(int key)
+static int glfwKeyToSG(int key, int scancode)
 {
 	switch (key) {
 	case GLFW_KEY_BACKSPACE:     return KEY_BACK;
@@ -64,8 +64,12 @@ static int glfwKeyToSG(int key)
 	if (key >= GLFW_KEY_0 && key <= GLFW_KEY_9)
 		return '0' + (key - GLFW_KEY_0);
 
-	if (key >= GLFW_KEY_A && key <= GLFW_KEY_Z)
+	if (key >= GLFW_KEY_A && key <= GLFW_KEY_Z) {
+		const char *name = glfwGetKeyName(key, scancode);
+		if (name && name[0] && !name[1])
+			return (unsigned char)tolower((unsigned char)name[0]);
 		return 'a' + (key - GLFW_KEY_A);
+	}
 
 	return 0;
 }
@@ -143,12 +147,11 @@ static void cbScroll(GLFWwindow *wnd, double xoffset, double yoffset)
 
 static void cbKey(GLFWwindow *wnd, int key, int scancode, int action, int mods)
 {
-	(void)scancode;
 	(void)mods;
 	sys_video_t *vid = (sys_video_t *)glfwGetWindowUserPointer(wnd);
 	if (!vid->keyEvent) return;
 
-	int sgKey = glfwKeyToSG(key);
+	int sgKey = glfwKeyToSG(key, scancode);
 	if (!sgKey) return;
 
 	int isDown = (action == GLFW_PRESS || action == GLFW_REPEAT);
