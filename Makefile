@@ -1,9 +1,10 @@
 CC ?= gcc
-CFLAGS = -std=c99 -D_GNU_SOURCE -O2 -Wall -Wno-unused-result -Wno-unused-variable -Wno-unused-function \
+CFLAGS = -std=c99 -D_GNU_SOURCE -O3 -flto -Wall -Wno-unused-result -Wno-unused-variable -Wno-unused-function \
          -Wno-missing-braces -Wno-unused-but-set-variable \
          -Isrc -Idep -Idep/glad \
-         $(shell pkg-config --cflags glfw3 luajit glesv2 egl zlib libwebp libcurl 2>/dev/null)
-LDFLAGS = $(shell pkg-config --libs glfw3 luajit glesv2 egl zlib libwebp libcurl 2>/dev/null) \
+         -Idep/luajit/src
+LDFLAGS = -Ldep/luajit/src -lluajit -Wl,-rpath,'$$ORIGIN/dep/luajit/src' \
+          $(shell pkg-config --libs glfw3 glesv2 egl zlib libwebp libcurl 2>/dev/null) \
           -lm -lpthread -ldl -luuid
 
 SRCS = src/main.c \
@@ -29,10 +30,14 @@ SRCS = src/main.c \
 OBJS = $(SRCS:.c=.o)
 TARGET = pob
 
-all: $(TARGET)
+all: luajit $(TARGET)
+
+luajit:
+	git submodule update --init dep/luajit
+	$(MAKE) -C dep/luajit BUILDMODE=static -j$(shell nproc)
 
 $(TARGET): $(OBJS)
-	$(CC) -o $@ $^ $(LDFLAGS)
+	$(CC) -flto -o $@ $^ $(LDFLAGS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -40,4 +45,7 @@ $(TARGET): $(OBJS)
 clean:
 	rm -f $(OBJS) $(TARGET)
 
-.PHONY: all clean
+clean-all: clean
+	-$(MAKE) -C dep/luajit clean
+
+.PHONY: all clean clean-all luajit
