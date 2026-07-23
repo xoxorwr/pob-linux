@@ -3,7 +3,7 @@
 
 #define CFG_VERSION_NUM "2.5"
 #define CFG_VERSION     "SimpleGraphic v" CFG_VERSION_NUM
-#define CFG_TITLE       "SimpleGraphic"
+#define CFG_TITLE       "Path of Building"
 #define CFG_LOGFILE     "SimpleGraphic/SimpleGraphic.log"
 #define CFG_DATAPATH    "SimpleGraphic/"
 

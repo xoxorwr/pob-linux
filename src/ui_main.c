@@ -373,15 +373,7 @@ void uiFrame(ui_main_t *ui)
 	ui->renderEnable = 1;
 
 	/* Run subscript system */
-	for (int i = 0; i < UI_MAX_SUBSCRIPTS; i++) {
-		if (ui->subScripts[i]) {
-			uiSubScriptFrame(ui);
-			if (!ui->subScripts[i]->isRunning) {
-				free(ui->subScripts[i]);
-				ui->subScripts[i] = NULL;
-			}
-		}
-	}
+	uiSubScriptFrame(ui);
 
 	/* Run script frame callback */
 	{

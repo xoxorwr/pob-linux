@@ -7,9 +7,11 @@
 
 struct ui_subscript_s {
 	int         id;
-	int         coRef;
-	lua_State  *co;
 	int         isRunning;
+	int         finished;
+	int         resultsRef;
+	int         nresults;
+	char       *errorStr;
 	ui_main_t  *ui;
 };
 

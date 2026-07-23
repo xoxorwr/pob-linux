@@ -1,24 +1,17 @@
 #include "ui_subscript.h"
 
+#include <string.h>
+
 /* ======== Sub-script System ======== */
 /*
- * Sub-scripts are Lua coroutines that run alongside the main script.
- * Each sub-script gets its own coroutine state created from the main Lua state.
- * The script text is loaded as a chunk, then wrapped in a function that calls
- * the user-provided entry functions and returns results via OnSubFinished/OnSubError.
+ * Runs sub-scripts synchronously on the main Lua state via lua_pcall.
+ * No threads, no coroutines, no lua_resume — just a simple pcall.
+ * Return values are stored in a registry table referenced by resultsRef.
+ * Results are delivered to Lua callbacks (OnSubFinished/OnSubError) on
+ * the next frame via the msgh=1 pattern (function is its own error handler,
+ * matching the Windows approach — no traceback, no lua_call inside error
+ * handlers).
  */
-
-static void subScriptFree(ui_subscript_t *ss)
-{
-	if (ss) {
-		if (ss->co) {
-			/* Coroutine is closed automatically when its parent state is closed,
-			 * but we null it to avoid dangling pointer access */
-			ss->co = NULL;
-		}
-		free(ss);
-	}
-}
 
 int uiSubScriptLaunch(ui_main_t *ui, const char *scriptText, const char *funcList,
                       const char *subList, int extraArgc)
@@ -26,7 +19,6 @@ int uiSubScriptLaunch(ui_main_t *ui, const char *scriptText, const char *funcLis
 	lua_State *L = ui->L;
 	int slot = -1;
 
-	/* Find a free slot */
 	for (int i = 0; i < UI_MAX_SUBSCRIPTS; i++) {
 		if (!ui->subScripts[i]) {
 			slot = i;
@@ -36,76 +28,71 @@ int uiSubScriptLaunch(ui_main_t *ui, const char *scriptText, const char *funcLis
 	if (slot < 0)
 		return -1;
 
-	/* Load the script text as a function */
 	if (luaL_loadstring(L, scriptText) != 0) {
-		/* Error loading subscript */
-		const char *err = lua_tostring(L, -1);
-		conWarning("LaunchSubScript: load error: %s", err ? err : "(unknown)");
+		conWarning("LaunchSubScript: %s", lua_tostring(L, -1));
 		lua_pop(L, 1);
 		return -1;
 	}
 
-	/* Create a new coroutine from the main state */
-	lua_State *co = lua_newthread(L);
-	if (!co) {
-		lua_pop(L, 1); /* Pop loaded chunk */
-		return -1;
-	}
-	/* The thread is now on top of L's stack, and we also reference it via registry
-	 * to prevent GC. Store the ref in the registry keyed by slot. */
-	int coRef = luaL_ref(L, LUA_REGISTRYINDEX);
-	/* Now the thread is popped from the stack (ref takes it) */
+	/* Push extra args for the pcall:
+	 * Stack before: [sText(1), fList(2), sList(3), url(4), ..., varN(3+extraArgc), chunk(top)]
+	 * Stack after:  [sText, fList, sList, url, ..., varN, chunk, url_dup, ..., varN_dup]
+	 */
+	for (int i = 0; i < extraArgc; i++)
+		lua_pushvalue(L, 4 + i);
 
-	/* Push the loaded chunk onto the coroutine */
-	lua_xmove(L, co, 1);
-	/* Stack: chunk */
-
-	/* The sub-script pattern from the reference implementation:
-	 * The scriptText is a Lua chunk that returns a function.
-	 * We call it to get the entry function, then we wrap it in
-	 * a function that calls funcList entries as callbacks. */
-
-	/* Create a wrapper function on the coroutine that:
-	 * 1. Loads and runs the script text
-	 * 2. Calls OnSubCall for each function in funcList
-	 * 3. Calls OnSubFinished with results */
-
-	/* For simplicity, execute the chunk directly. The scriptText is expected
-	 * to be a complete Lua chunk. The funcList and subList provide the
-	 * mapping of function names. */
-	lua_call(co, 0, LUA_MULTRET);
-
-	/* Create the subscript structure */
 	ui_subscript_t *ss = (ui_subscript_t *)calloc(1, sizeof(ui_subscript_t));
 	ss->id = slot;
-	ss->coRef = coRef;
-	ss->co = co;
 	ss->isRunning = 1;
+	ss->finished = 0;
+	ss->resultsRef = LUA_REFNIL;
+	ss->nresults = 0;
+	ss->errorStr = NULL;
 	ss->ui = ui;
-
 	ui->subScripts[slot] = ss;
+
+	int status = lua_pcall(L, extraArgc, LUA_MULTRET, 0);
+
+	if (status == LUA_OK) {
+		int top = lua_gettop(L);
+		int nres = top - (3 + extraArgc);
+		ss->nresults = nres;
+
+		if (nres > 0) {
+			lua_createtable(L, nres, 0);
+			for (int r = 0; r < nres; r++) {
+				lua_pushvalue(L, 4 + extraArgc + r);
+				lua_rawseti(L, -2, r + 1);
+			}
+			ss->resultsRef = luaL_ref(L, LUA_REGISTRYINDEX);
+		}
+		lua_pop(L, nres); /* pop return values off main stack */
+	} else {
+		ss->errorStr = AllocString(lua_tostring(L, -1) ? lua_tostring(L, -1) : "(unknown)");
+		conWarning("SubScript %d error: %s", slot, ss->errorStr);
+		lua_pop(L, 1); /* pop error message */
+	}
+	ss->finished = 1;
 
 	return slot;
 }
 
 void uiSubScriptAbort(ui_main_t *ui, int slot)
 {
-	if (slot < 0 || slot >= UI_MAX_SUBSCRIPTS)
-		return;
+	if (slot < 0 || slot >= UI_MAX_SUBSCRIPTS) return;
 	ui_subscript_t *ss = ui->subScripts[slot];
 	if (!ss) return;
-
 	ss->isRunning = 0;
-	ss->co = NULL;
-	luaL_unref(ui->L, LUA_REGISTRYINDEX, ss->coRef);
+	if (ss->resultsRef != LUA_REFNIL)
+		luaL_unref(ui->L, LUA_REGISTRYINDEX, ss->resultsRef);
+	FreeString(ss->errorStr);
 	free(ss);
 	ui->subScripts[slot] = NULL;
 }
 
 int uiSubScriptIsRunning(ui_main_t *ui, int slot)
 {
-	if (slot < 0 || slot >= UI_MAX_SUBSCRIPTS)
-		return 0;
+	if (slot < 0 || slot >= UI_MAX_SUBSCRIPTS) return 0;
 	ui_subscript_t *ss = ui->subScripts[slot];
 	return ss && ss->isRunning;
 }
@@ -116,54 +103,54 @@ void uiSubScriptFrame(ui_main_t *ui)
 
 	for (int i = 0; i < UI_MAX_SUBSCRIPTS; i++) {
 		ui_subscript_t *ss = ui->subScripts[i];
-		if (!ss || !ss->isRunning || !ss->co)
+		if (!ss || !ss->isRunning || !ss->finished)
 			continue;
 
-		lua_State *co = ss->co;
-		int status = lua_resume(co, 0);
+		ss->isRunning = 0;
 
-		if (status == LUA_YIELD) {
-			/* Sub-script yielded, still running */
-			ui->hasActiveCoroutine = 1;
-		} else if (status == LUA_OK) {
-			/* Sub-script finished */
-			ss->isRunning = 0;
-			int nres = lua_gettop(co);
+		/* Get MainObject callback */
+		lua_getfield(L, LUA_REGISTRYINDEX, "uicallbacks");
+		lua_getfield(L, -1, "MainObject");
+		lua_remove(L, -2);
 
-			/* Call OnSubFinished callback */
-			lua_getfield(L, LUA_REGISTRYINDEX, "uicallbacks");
-			lua_getfield(L, -1, "OnSubFinished");
+		if (lua_istable(L, -1)) {
+			const char *cbName = ss->errorStr ? "OnSubError" : "OnSubFinished";
+			lua_getfield(L, -1, cbName);
+
 			if (lua_isfunction(L, -1)) {
-				lua_remove(L, -2);
-				lua_pushlightuserdata(L, (void *)(uintptr_t)i);
-				/* Copy results from coroutine */
-				for (int r = 0; r < nres; r++)
-					lua_pushvalue(co, r + 1);
-				lua_call(L, 1 + nres, 0);
-			} else {
-				lua_pop(L, 2);
-				lua_settop(co, 0);
-			}
-		} else {
-			/* Error */
-			ss->isRunning = 0;
+				/* msgh=1: func at index 1 is its own error handler */
+				lua_insert(L, 1);
+				/* Stack: [func(1), main_obj(2)] */
 
-			const char *errMsg = lua_tostring(co, -1);
-			conWarning("SubScript %d error: %s", i, errMsg ? errMsg : "(unknown)");
-
-			/* Call OnSubError callback */
-			lua_getfield(L, LUA_REGISTRYINDEX, "uicallbacks");
-			lua_getfield(L, -1, "OnSubError");
-			if (lua_isfunction(L, -1)) {
-				lua_remove(L, -2);
 				lua_pushlightuserdata(L, (void *)(uintptr_t)i);
-				lua_pushstring(L, errMsg ? errMsg : "unknown error");
-				lua_call(L, 2, 0);
-			} else {
-				lua_pop(L, 2);
+
+				if (ss->errorStr) {
+					lua_pushstring(L, ss->errorStr);
+					/* [func(1), main_obj(2), id(3), err(4)] */
+					lua_pcall(L, 3, 0, 1);
+				} else {
+					int nres = ss->nresults;
+					if (ss->resultsRef != LUA_REFNIL) {
+						lua_rawgeti(L, LUA_REGISTRYINDEX, ss->resultsRef);
+						/* table is at lua_gettop(L); push its elements */
+						int tblIdx = lua_gettop(L);
+						for (int r = 0; r < nres; r++)
+							lua_rawgeti(L, tblIdx, r + 1);
+						lua_remove(L, tblIdx);
+					}
+					/* [func(1), main_obj(2), id(3), ret1(4), ...] */
+					lua_pcall(L, 2 + nres, 0, 1);
+				}
 			}
-			lua_pop(co, 1); /* Pop error message */
+			lua_pop(L, 1);
 		}
+		lua_settop(L, 0);
+
+		if (ss->resultsRef != LUA_REFNIL)
+			luaL_unref(ui->L, LUA_REGISTRYINDEX, ss->resultsRef);
+		FreeString(ss->errorStr);
+		free(ss);
+		ui->subScripts[i] = NULL;
 	}
 }
 
@@ -173,8 +160,9 @@ void uiSubScriptFreeAll(ui_main_t *ui)
 		if (ui->subScripts[i]) {
 			ui_subscript_t *ss = ui->subScripts[i];
 			ss->isRunning = 0;
-			ss->co = NULL;
-			luaL_unref(ui->L, LUA_REGISTRYINDEX, ss->coRef);
+			if (ss->resultsRef != LUA_REFNIL)
+				luaL_unref(ui->L, LUA_REGISTRYINDEX, ss->resultsRef);
+			FreeString(ss->errorStr);
 			free(ss);
 			ui->subScripts[i] = NULL;
 		}
