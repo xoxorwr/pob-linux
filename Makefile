@@ -2,12 +2,14 @@ CC ?= clang
 CFLAGS = -std=c99 -D_GNU_SOURCE -O3 -flto -Wall -Wno-unused-result -Wno-unused-variable -Wno-unused-function \
          -Wno-missing-braces -Wno-unused-but-set-variable \
          -Isrc -Idep -Idep/glad \
-         -Idep/luajit/src
+         -Idep/luajit/src \
+         -Isrc/luasocket
 DBG_CFLAGS = -std=c99 -D_GNU_SOURCE -O0 -g -fno-omit-frame-pointer -Wall \
              -Wno-unused-result -Wno-unused-variable -Wno-unused-function \
              -Wno-missing-braces -Wno-unused-but-set-variable \
              -Isrc -Idep -Idep/glad \
-             -Idep/luajit/src
+             -Idep/luajit/src \
+             -Isrc/luasocket
 DBG_LDFLAGS = -Ldep/luajit/src -lluajit -Wl,-rpath,'$$ORIGIN/dep/luajit/src' \
               $(shell pkg-config --libs glfw3 glesv2 egl zlib libwebp libcurl 2>/dev/null) \
               -lm -lpthread -ldl -luuid
@@ -33,7 +35,20 @@ SRCS = src/main.c \
        src/ui_main.c \
        src/ui_api.c \
        src/ui_subscript.c \
-       src/lcurl.c
+       src/lcurl.c \
+       src/luasocket/auxiliar.c \
+       src/luasocket/buffer.c \
+       src/luasocket/compat.c \
+       src/luasocket/except.c \
+       src/luasocket/inet.c \
+       src/luasocket/io.c \
+       src/luasocket/luasocket.c \
+       src/luasocket/options.c \
+       src/luasocket/select.c \
+       src/luasocket/tcp.c \
+       src/luasocket/timeout.c \
+       src/luasocket/udp.c \
+       src/luasocket/usocket.c
 
 OBJS = $(SRCS:.c=.o)
 TARGET = pob
