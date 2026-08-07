@@ -279,6 +279,16 @@ void uiScriptInit(ui_main_t *ui)
 		lua_pop(ui->L, 2);
 	}
 
+	/* Register socket.core via package.preload */
+	{
+		int luaopen_socket_core(lua_State *L);
+		lua_getglobal(ui->L, "package");
+		lua_getfield(ui->L, -1, "preload");
+		lua_pushcfunction(ui->L, luaopen_socket_core);
+		lua_setfield(ui->L, -2, "socket.core");
+		lua_pop(ui->L, 2);
+	}
+
 	/* Init subscript system */
 	for (int i = 0; i < UI_MAX_SUBSCRIPTS; i++)
 		ui->subScripts[i] = NULL;
