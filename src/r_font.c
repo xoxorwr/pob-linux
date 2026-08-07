@@ -146,20 +146,21 @@ int r_fontStringWidth(r_font_t *font, int height, const char *str)
 	int fhIdx = FindFontHeightIndex(font, height);
 	f_fontHeight_s *fh = font->fontHeights[fhIdx];
 	float scale = (float)height / (float)fh->height;
-	int maxW = 0;
-	int curW = 0;
+	float maxW = 0.0f;
+	float curW = 0.0f;
 	const char *p = str;
 
 	while (*p) {
 		if (*p == '\n') {
 			if (curW > maxW) maxW = curW;
-			curW = 0;
+			curW = 0.0f;
 			p++;
 			continue;
 		}
 		if (*p == '\t') {
 			int spW = GlyphPixelWidth(fh, ' ');
-			curW += (int)((float)(spW * 4) * scale);
+			curW += (float)(spW * 4) * scale;
+			curW = ceilf(curW);
 			p++;
 			continue;
 		}
@@ -169,11 +170,12 @@ int r_fontStringWidth(r_font_t *font, int height, const char *str)
 			continue;
 		}
 		int ch = (unsigned char)*p;
-		curW += (int)((float)GlyphPixelWidth(fh, ch) * scale);
+		curW += (float)GlyphPixelWidth(fh, ch) * scale;
+		curW = ceilf(curW);
 		p++;
 	}
 	if (curW > maxW) maxW = curW;
-	return maxW;
+	return (int)curW;
 }
 
 /* ======== Cursor Index ======== */
@@ -314,6 +316,7 @@ static void DrawTextLine(r_font_t *font, float x, float y, int align, int height
 			const f_glyph_s *spGlyph = FontHeightGlyph(fh, ' ');
 			int spW = spGlyph->width + spGlyph->spLeft + spGlyph->spRight;
 			x += (float)(spW << 2) * scale;
+			x = ceilf(x);
 			p++;
 			remaining--;
 			continue;
